@@ -3,6 +3,8 @@
 The tool is intended to make and restore backup easily and automatically within a few clicks, totally friendly user and with few restrictions for lesser chances of the user doing something wrong.
 It might not be perfect and it is not that fancy, but it will work as I planned it to. Give it a try, reach me out for feedback if you want, just use it wiselly and respectifully.
 
+<img width="895" height="729" alt="image" src="https://github.com/user-attachments/assets/97245d89-ae5a-4220-ae82-5f715f09af8e" />
+
 ## ================= FOR USERS =================
 Requirements:
 
