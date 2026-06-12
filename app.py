@@ -1,13 +1,15 @@
 import os
+import sys
 import json
 import threading
 import customtkinter as ctk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, PhotoImage
 
-from config import load_config, save_config, detect_google_drive, detect_default_ppsspp, validate_ppsspp_path, detect_default_pcsx2, validate_pcsx2_path, detect_default_citra, validate_citra_path
-from backup import backup_ppsspp, backup_pcsx2, backup_citra, backup_custom_dir
-from restore import restore_ppsspp, restore_pcsx2, restore_citra, restore_custom_dir
+from config import load_config, save_config, detect_google_drive, detect_default_steam, validate_steam_path, detect_default_ppsspp, validate_ppsspp_path, detect_default_vita3k, validate_vita3k_path, detect_default_duckstation, validate_duckstation_path, detect_default_pcsx2, validate_pcsx2_path, detect_default_rpcs3, validate_rpcs3_path, detect_default_melonds, validate_melonds_path, detect_default_citra, validate_citra_path, detect_default_project64, validate_project64_path, detect_default_dolphin, validate_dolphin_path, detect_default_cemu, validate_cemu_path, detect_default_eden, validate_eden_path
+from backup import backup_steam, backup_ppsspp, backup_vita3k, backup_duckstation, backup_pcsx2, backup_rpcs3, backup_melonds, backup_citra, backup_project64, backup_dolphin, backup_cemu, backup_eden, backup_custom_dir
+from restore import restore_steam, restore_ppsspp, restore_vita3k, restore_duckstation, restore_pcsx2, restore_rpcs3, restore_melonds, restore_citra, restore_project64, restore_dolphin, restore_cemu, restore_eden, restore_custom_dir
 from extra_backups import load_extra_backups, save_extra_backups
+from utils import ensure_sync_client_running
 
 # Fontes padrão
 FONT_DEFAULT = ("Segoe UI", 14)        # Para labels e entradas
@@ -17,9 +19,9 @@ FONT_BOLD = ("Segoe UI", 16, "bold")   # Para títulos e botões
 translations = {}       # dicionário que vai guardar o idioma atual
 current_language = "EN" # idioma padrão
 
-# ===== Função para carregar idioma =====
+# ====== Função para carregar idioma ======
 def load_language(lang_code):
-    """Carrega idioma e atualiza variável global"""
+    # Carrega idioma e atualiza variável global
     global translations, current_language
     current_language = lang_code
     path = os.path.join("locales", f"{lang_code}.json")
@@ -29,9 +31,9 @@ def load_language(lang_code):
     except FileNotFoundError:
         translations = {}  # fallback
 
-# ===== Função t() para pegar tradução =====
+# ====== Função t() para pegar tradução ======
 def t(key, *args):
-    """Retorna o texto traduzido, usa key como fallback se não existir"""
+    # Retorna o texto traduzido, usa key como fallback se não existir
     text = translations.get(key, key)
     if args:
         try:
@@ -39,6 +41,12 @@ def t(key, *args):
         except:
             pass
     return text
+
+def resource_path(relative_path):
+    if hasattr(sys, "_MEIPASS"):
+        return os.path.join(sys._MEIPASS, relative_path)
+
+    return os.path.join(os.path.abspath("."), relative_path)
 
 # ====================== CONFIGURAÇÕES DE COR ======================
 COLORS = {
@@ -143,6 +151,10 @@ class MultiSavedataBackupApp:
         else:
             self.root.geometry(f"{width}x{height}")
 
+        state = self.config.get("window_state", "normal")
+        if state == "zoomed":
+            self.root.after(100, lambda: self.root.state("zoomed"))
+
         self.root.resizable(True, True)
         # ===== Registrar fechamento da janela =====
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -180,7 +192,7 @@ class MultiSavedataBackupApp:
 
     # ====================== ATUALIZAR TRADUÇÃO ======================
     def update_ui_language(self):
-        """Atualiza todos os textos da interface quando o idioma muda"""
+        # Atualiza todos os textos da interface quando o idioma muda
         self.backup_btn.configure(text=t("start_backup"))
         self.restore_btn.configure(text=t("restore_backup"))
         self.sync_folder_label.configure(text=t("sync_folder"))
@@ -211,19 +223,55 @@ class MultiSavedataBackupApp:
         self.emu_frame.pack(side="left", fill="both", expand=True, padx=(0,10))
 
         # Variáveis de toggle
+        self.steam_enabled = ctk.BooleanVar(value=self.config.get("steam_enabled", False))
         self.ppsspp_enabled = ctk.BooleanVar(value=self.config.get("ppsspp_enabled", False))
+        self.vita3k_enabled = ctk.BooleanVar(value=self.config.get("vita3k_enabled", False))
+        self.duckstation_enabled = ctk.BooleanVar(value=self.config.get("duckstation_enabled", False))
         self.pcsx2_enabled = ctk.BooleanVar(value=self.config.get("pcsx2_enabled", False))
+        self.rpcs3_enabled = ctk.BooleanVar(value=self.config.get("rpcs3_enabled", False))
+        self.melonds_enabled = ctk.BooleanVar(value=self.config.get("melonds_enabled", False))
         self.citra_enabled = ctk.BooleanVar(value=self.config.get("citra_enabled", False))
+        self.project64_enabled = ctk.BooleanVar(value=self.config.get("project64_enabled", False))
+        self.dolphin_enabled = ctk.BooleanVar(value=self.config.get("dolphin_enabled", False))
+        self.cemu_enabled = ctk.BooleanVar(value=self.config.get("cemu_enabled", False))
+        self.eden_enabled = ctk.BooleanVar(value=self.config.get("eden_enabled", False))
 
         # ===== Frames independentes para cada emulador (botão + diretório) =====
+        self.steam_container = self.create_emulator_unit(
+            self.emu_frame, "STEAM", self.toggle_steam, self.choose_steam, "steam_var"
+        )
         self.ppsspp_container = self.create_emulator_unit(
             self.emu_frame, "PPSSPP", self.toggle_ppsspp, self.choose_ppsspp, "ppsspp_var"
+        )
+        self.vita3k_container = self.create_emulator_unit(
+            self.emu_frame, "VITA3K", self.toggle_vita3k, self.choose_vita3k, "vita3k_var"
+        )
+        self.duckstation_container = self.create_emulator_unit(
+            self.emu_frame, "DUCKSTATION", self.toggle_duckstation, self.choose_duckstation, "duckstation_var"
         )
         self.pcsx2_container = self.create_emulator_unit(
             self.emu_frame, "PCSX2", self.toggle_pcsx2, self.choose_pcsx2, "pcsx2_var"
         )
+        self.rpcs3_container = self.create_emulator_unit(
+            self.emu_frame, "RPCS3", self.toggle_rpcs3, self.choose_rpcs3, "rpcs3_var"
+        )
+        self.melonds_container = self.create_emulator_unit(
+            self.emu_frame, "MELONDS", self.toggle_melonds, self.choose_melonds, "melonds_var"
+        )
         self.citra_container = self.create_emulator_unit(
             self.emu_frame, "CITRA", self.toggle_citra, self.choose_citra, "citra_var"
+        )
+        self.project64_container = self.create_emulator_unit(
+            self.emu_frame, "PROJECT64", self.toggle_project64, self.choose_project64, "project64_var"
+        )
+        self.dolphin_container = self.create_emulator_unit(
+            self.emu_frame, "DOLPHIN", self.toggle_dolphin, self.choose_dolphin, "dolphin_var"
+        )
+        self.cemu_container = self.create_emulator_unit(
+            self.emu_frame, "CEMU", self.toggle_cemu, self.choose_cemu, "cemu_var"
+        )
+        self.eden_container = self.create_emulator_unit(
+            self.emu_frame, "EDEN", self.toggle_eden, self.choose_eden, "eden_var"
         )
 
         # Atualiza layout inicialmente
@@ -338,13 +386,14 @@ class MultiSavedataBackupApp:
 
         # ===== Progresso =====
         self.progress_var = ctk.DoubleVar(value=0)
-        self.progress_bar = ctk.CTkProgressBar(self.bottom_container, variable=self.progress_var)
+        self.progress_bar = ctk.CTkProgressBar(self.bottom_container, variable=self.progress_var, fg_color="gray40", progress_color="#1F6AA5")
         self.progress_bar.pack(fill="x", pady=(0, 6))
-        self.progress_label = ctk.CTkLabel(self.bottom_container, text="0%", anchor="w")
+        self.progress_bar.set(0)
+        self.progress_label = ctk.CTkLabel(self.bottom_container, text="0%", anchor="center")
         self.progress_label.pack(fill="x")
         # Label da assinatura (à direita, mesma linha)
         self.signature_var = ctk.StringVar()
-        self.signature_var.set("v1.0 \n© 2026 Malckyor")
+        self.signature_var.set("v2.0 \n© 2026 Malckyor")
 
         self.signature_label = ctk.CTkLabel(
             self.bottom_container,
@@ -423,9 +472,27 @@ class MultiSavedataBackupApp:
         return container
 
     # ====================== TOGGLES ======================
+    def toggle_steam(self):
+        self.steam_enabled.set(not self.steam_enabled.get())
+        self.config["steam_enabled"] = self.steam_enabled.get()
+        save_config(self.config)
+        self.update_emulator_layout()
+
     def toggle_ppsspp(self):
         self.ppsspp_enabled.set(not self.ppsspp_enabled.get())
         self.config["ppsspp_enabled"] = self.ppsspp_enabled.get()
+        save_config(self.config)
+        self.update_emulator_layout()
+
+    def toggle_vita3k(self):
+        self.vita3k_enabled.set(not self.vita3k_enabled.get())
+        self.config["vita3k_enabled"] = self.vita3k_enabled.get()
+        save_config(self.config)
+        self.update_emulator_layout()
+
+    def toggle_duckstation(self):
+        self.duckstation_enabled.set(not self.duckstation_enabled.get())
+        self.config["duckstation_enabled"] = self.duckstation_enabled.get()
         save_config(self.config)
         self.update_emulator_layout()
 
@@ -435,9 +502,45 @@ class MultiSavedataBackupApp:
         save_config(self.config)
         self.update_emulator_layout()
 
+    def toggle_rpcs3(self):
+        self.rpcs3_enabled.set(not self.rpcs3_enabled.get())
+        self.config["rpcs3_enabled"] = self.rpcs3_enabled.get()
+        save_config(self.config)
+        self.update_emulator_layout()
+
+    def toggle_melonds(self):
+        self.melonds_enabled.set(not self.melonds_enabled.get())
+        self.config["melonds_enabled"] = self.melonds_enabled.get()
+        save_config(self.config)
+        self.update_emulator_layout()
+
     def toggle_citra(self):
         self.citra_enabled.set(not self.citra_enabled.get())
         self.config["citra_enabled"] = self.citra_enabled.get()
+        save_config(self.config)
+        self.update_emulator_layout()
+
+    def toggle_project64(self):
+        self.project64_enabled.set(not self.project64_enabled.get())
+        self.config["project64_enabled"] = self.project64_enabled.get()
+        save_config(self.config)
+        self.update_emulator_layout()
+
+    def toggle_dolphin(self):
+        self.dolphin_enabled.set(not self.dolphin_enabled.get())
+        self.config["dolphin_enabled"] = self.dolphin_enabled.get()
+        save_config(self.config)
+        self.update_emulator_layout()
+
+    def toggle_cemu(self):
+        self.cemu_enabled.set(not self.cemu_enabled.get())
+        self.config["cemu_enabled"] = self.cemu_enabled.get()
+        save_config(self.config)
+        self.update_emulator_layout()
+
+    def toggle_eden(self):
+        self.eden_enabled.set(not self.eden_enabled.get())
+        self.config["eden_enabled"] = self.eden_enabled.get()
         save_config(self.config)
         self.update_emulator_layout()
 
@@ -446,12 +549,30 @@ class MultiSavedataBackupApp:
         # Atualiza cores e visibilidade dos botões e frames
         for container in self.emulator_units:
             # Determina se está habilitado
-            if container.main_btn.cget("text") == "PPSSPP":
+            if container.main_btn.cget("text") == "STEAM":
+                enabled = self.steam_enabled.get()
+            elif container.main_btn.cget("text") == "PPSSPP":
                 enabled = self.ppsspp_enabled.get()
+            elif container.main_btn.cget("text") == "VITA3K":
+                enabled = self.vita3k_enabled.get()
+            elif container.main_btn.cget("text") == "DUCKSTATION":
+                enabled = self.duckstation_enabled.get()
             elif container.main_btn.cget("text") == "PCSX2":
                 enabled = self.pcsx2_enabled.get()
+            elif container.main_btn.cget("text") == "RPCS3":
+                enabled = self.rpcs3_enabled.get()
+            elif container.main_btn.cget("text") == "MELONDS":
+                enabled = self.melonds_enabled.get()
             elif container.main_btn.cget("text") == "CITRA":
                 enabled = self.citra_enabled.get()
+            elif container.main_btn.cget("text") == "PROJECT64":
+                enabled = self.project64_enabled.get()
+            elif container.main_btn.cget("text") == "DOLPHIN":
+                enabled = self.dolphin_enabled.get()
+            elif container.main_btn.cget("text") == "CEMU":
+                enabled = self.cemu_enabled.get()
+            elif container.main_btn.cget("text") == "EDEN":
+                enabled = self.eden_enabled.get()
             else:
                 enabled = True  # caso algum outro container apareça futuramente
 
@@ -473,9 +594,19 @@ class MultiSavedataBackupApp:
         units_sorted = sorted(
             self.emulator_units,
             key=lambda c: not (
+                self.steam_enabled.get() if c.main_btn.cget("text") == "STEAM" else
                 self.ppsspp_enabled.get() if c.main_btn.cget("text") == "PPSSPP" else
+                self.vita3k_enabled.get() if c.main_btn.cget("text") == "VITA3K" else
+                self.duckstation_enabled.get() if c.main_btn.cget("text") == "DUCKSTATION" else 
                 self.pcsx2_enabled.get() if c.main_btn.cget("text") == "PCSX2" else
-                self.citra_enabled.get() if c.main_btn.cget("text") == "CITRA" else True
+                self.rpcs3_enabled.get() if c.main_btn.cget("text") == "RPCS3" else
+                self.melonds_enabled.get() if c.main_btn.cget("text") == "MELONDS" else 
+                self.citra_enabled.get() if c.main_btn.cget("text") == "CITRA" else 
+                self.project64_enabled.get() if c.main_btn.cget("text") == "PROJECT64" else 
+                self.dolphin_enabled.get() if c.main_btn.cget("text") == "DOLPHIN" else 
+                self.cemu_enabled.get() if c.main_btn.cget("text") == "CEMU" else 
+                self.eden_enabled.get() if c.main_btn.cget("text") == "EDEN" else 
+                True
             )
         )
 
@@ -503,12 +634,33 @@ class MultiSavedataBackupApp:
 
     # ====================== LOAD DEFAULTS ======================
     def load_defaults(self):
+        self.steam_var.set(self.config.get("steam_path") or detect_default_steam() or "")
         self.ppsspp_var.set(self.config.get("ppsspp_path") or detect_default_ppsspp() or "")
-        self.pcsx2_var.set(self.config.get("pcsx2_path" or detect_default_pcsx2 or ""))
-        self.citra_var.set(self.config.get("citra_path" or detect_default_citra or ""))
+        self.vita3k_var.set(self.config.get("vita3k_path") or detect_default_vita3k() or "")
+        self.duckstation_var.set(self.config.get("duckstation_path") or detect_default_duckstation() or "")
+        self.pcsx2_var.set(self.config.get("pcsx2_path") or detect_default_pcsx2() or "")
+        self.rpcs3_var.set(self.config.get("rpcs3_path") or detect_default_rpcs3() or "")
+        self.melonds_var.set(self.config.get("melonds_path") or detect_default_melonds() or "")
+        self.citra_var.set(self.config.get("citra_path") or detect_default_citra() or "")
+        self.project64_var.set(self.config.get("project64_path") or detect_default_project64() or "")
+        self.dolphin_var.set(self.config.get("dolphin_path") or detect_default_dolphin() or "")
+        self.cemu_var.set(self.config.get("cemu_path") or detect_default_cemu() or "")
+        self.eden_var.set(self.config.get("eden_path") or detect_default_eden() or "")
         self.backup_var.set(self.config.get("backup_root") or detect_google_drive() or "")
 
     # ====================== CHOOSERS ======================
+    def choose_steam(self):
+        initial_dir = self.config.get("steam_path") or detect_default_steam() or os.path.expanduser("~")
+        path = filedialog.askdirectory(initialdir=initial_dir)
+        if not path:
+            return
+        if validate_steam_path(path):
+            self.steam_var.set(path)
+            self.config["steam_path"] = path
+            save_config(self.config)
+        else:
+            messagebox.showwarning(t("invalid_structure_title"),t("invalid_steam_struct"))
+
     def choose_ppsspp(self):
         initial_dir = self.config.get("ppsspp_path") or detect_default_ppsspp() or os.path.expanduser("~")
         path = filedialog.askdirectory(initialdir=initial_dir)
@@ -520,6 +672,30 @@ class MultiSavedataBackupApp:
             save_config(self.config)
         else:
             messagebox.showwarning(t("invalid_structure_title"),t("invalid_ppsspp_struct"))
+
+    def choose_vita3k(self):
+        initial_dir = self.config.get("vita3k_path") or detect_default_vita3k() or os.path.expanduser("~")
+        path = filedialog.askdirectory(initialdir=initial_dir)
+        if not path:
+            return
+        if validate_vita3k_path(path):
+            self.vita3k_var.set(path)
+            self.config["vita3k_path"] = path
+            save_config(self.config)
+        else:
+            messagebox.showwarning(t("invalid_structure_title"),t("invalid_vita3k_struct"))
+
+    def choose_duckstation(self):
+        initial_dir = self.config.get("duckstation_path") or detect_default_duckstation() or os.path.expanduser("~")
+        path = filedialog.askdirectory(initialdir=initial_dir)
+        if not path:
+            return
+        if path and validate_duckstation_path(path):
+            self.duckstation_var.set(path)
+            self.config["duckstation_path"] = path
+            save_config(self.config)
+        else:
+            messagebox.showwarning(t("invalid_structure_title"),t("invalid_duckstation_struct"))
 
     def choose_pcsx2(self):
         initial_dir = self.config.get("pcsx2_path") or detect_default_pcsx2() or os.path.expanduser("~")
@@ -533,6 +709,30 @@ class MultiSavedataBackupApp:
         else:
             messagebox.showwarning(t("invalid_structure_title"),t("invalid_pcsx2_struct"))
 
+    def choose_rpcs3(self):
+        initial_dir = self.config.get("rpcs3_path") or detect_default_rpcs3() or os.path.expanduser("~")
+        path = filedialog.askdirectory(initialdir=initial_dir)
+        if not path:
+            return
+        if path and validate_rpcs3_path(path):
+            self.rpcs3_var.set(path)
+            self.config["rpcs3_path"] = path
+            save_config(self.config)
+        else:
+            messagebox.showwarning(t("invalid_structure_title"),t("invalid_rpcs3_struct"))
+
+    def choose_melonds(self):
+        initial_dir = self.config.get("melonds_path") or detect_default_melonds() or os.path.expanduser("~")
+        path = filedialog.askdirectory(initialdir=initial_dir)
+        if not path:
+            return
+        if path and validate_melonds_path(path):
+            self.melonds_var.set(path)
+            self.config["melonds_path"] = path
+            save_config(self.config)
+        else:
+            messagebox.showwarning(t("invalid_structure_title"),t("invalid_melonds_struct"))
+
     def choose_citra(self):
         initial_dir = self.config.get("citra_path") or detect_default_citra() or os.path.expanduser("~")
         path = filedialog.askdirectory(initialdir=initial_dir)
@@ -544,6 +744,54 @@ class MultiSavedataBackupApp:
             save_config(self.config)
         else:
             messagebox.showwarning(t("invalid_structure_title"),t("invalid_citra_struct"))
+
+    def choose_project64(self):
+        initial_dir = self.config.get("project64_path") or detect_default_project64() or os.path.expanduser("~")
+        path = filedialog.askdirectory(initialdir=initial_dir)
+        if not path:
+            return
+        if path and validate_project64_path(path):
+            self.project64_var.set(path)
+            self.config["project64_path"] = path
+            save_config(self.config)
+        else:
+            messagebox.showwarning(t("invalid_structure_title"),t("invalid_project64_struct"))
+
+    def choose_dolphin(self):
+        initial_dir = self.config.get("dolphin_path") or detect_default_dolphin() or os.path.expanduser("~")
+        path = filedialog.askdirectory(initialdir=initial_dir)
+        if not path:
+            return
+        if path and validate_dolphin_path(path):
+            self.dolphin_var.set(path)
+            self.config["dolphin_path"] = path
+            save_config(self.config)
+        else:
+            messagebox.showwarning(t("invalid_structure_title"),t("invalid_dolphin_struct"))
+
+    def choose_cemu(self):
+        initial_dir = self.config.get("cemu_path") or detect_default_cemu() or os.path.expanduser("~")
+        path = filedialog.askdirectory(initialdir=initial_dir)
+        if not path:
+            return
+        if path and validate_cemu_path(path):
+            self.cemu_var.set(path)
+            self.config["cemu_path"] = path
+            save_config(self.config)
+        else:
+            messagebox.showwarning(t("invalid_structure_title"),t("invalid_cemu_struct"))
+
+    def choose_eden(self):
+        initial_dir = self.config.get("eden_path") or detect_default_eden() or os.path.expanduser("~")
+        path = filedialog.askdirectory(initialdir=initial_dir)
+        if not path:
+            return
+        if path and validate_eden_path(path):
+            self.eden_var.set(path)
+            self.config["eden_path"] = path
+            save_config(self.config)
+        else:
+            messagebox.showwarning(t("invalid_structure_title"),t("invalid_eden_struct"))
 
     def choose_backup_root(self):
         initial_dir = self.config.get("backup_root") or detect_google_drive() or os.path.expanduser("~")
@@ -566,16 +814,69 @@ class MultiSavedataBackupApp:
         threading.Thread(target=self.run_restore, daemon=True).start()
 
     def progress_callback(self, percent, message=None):
-        self.progress_var.set(percent)
-        self.progress_label.configure(text=f"{int(percent)}%")
+        self.root.after(0, self._update_progress_ui, percent, message)
+
+    def _update_progress_ui(self, percent, message=None):
+        self.progress_var.set(percent / 100)
+
+        if message:
+            self.progress_label.configure(
+                text=f"{int(percent)}% - {message}"
+            )
+        else:
+            self.progress_label.configure(
+                text=f"{int(percent)}%"
+            )
+
+    def _finish_backup_ui(self, messages):
+        self.progress_var.set(100)
+        self.progress_label.configure(text="100%")
+        self.show_backup_messages(t("backup_finished"), messages)
+
+    def _finish_restore_ui(self, messages):
+        self.progress_var.set(100)
+        self.progress_label.configure(text="100%")
+        messagebox.showinfo(t("restore_finished"), "\n\n".join(messages))
 
     def run_backup(self):
         backup_root = self.backup_var.get()
         messages = []
+
+        if backup_root:
+            sync_ready, sync_error = ensure_sync_client_running(
+                backup_root,
+                progress_callback=self.progress_callback
+            )
+
+            if not sync_ready:
+                error_msg = sync_error
+                self.root.after(
+                    0,
+                    lambda: messagebox.showerror(
+                        t("error"),
+                        error_msg
+                    )
+                )
+                return
+        
+        # STEAM
+        if self.steam_enabled.get():
+            success, msg = backup_steam(self.steam_var.get(), backup_root, progress_callback=self.progress_callback)
+            messages.append(msg)
         
         # PPSSPP
         if self.ppsspp_enabled.get():
             success, msg = backup_ppsspp(self.ppsspp_var.get(), backup_root, progress_callback=self.progress_callback)
+            messages.append(msg)
+        
+        # VITA3K
+        if self.vita3k_enabled.get():
+            success, msg = backup_vita3k(self.vita3k_var.get(), backup_root, progress_callback=self.progress_callback)
+            messages.append(msg)
+
+        # DUCKSTATION
+        if self.duckstation_enabled.get():
+            success, msg = backup_duckstation(self.duckstation_var.get(), backup_root, progress_callback=self.progress_callback)
             messages.append(msg)
             
         # PCSX2
@@ -583,9 +884,39 @@ class MultiSavedataBackupApp:
             success, msg = backup_pcsx2(self.pcsx2_var.get(), backup_root, progress_callback=self.progress_callback)
             messages.append(msg)
             
+        # RPCS3
+        if self.rpcs3_enabled.get():
+            success, msg = backup_rpcs3(self.rpcs3_var.get(), backup_root, progress_callback=self.progress_callback)
+            messages.append(msg)
+            
+        # MELONDS
+        if self.melonds_enabled.get():
+            success, msg = backup_melonds(self.melonds_var.get(), backup_root, progress_callback=self.progress_callback)
+            messages.append(msg)
+            
         # CITRA
         if self.citra_enabled.get():
             success, msg = backup_citra(self.citra_var.get(), backup_root, progress_callback=self.progress_callback)
+            messages.append(msg)
+            
+        # PROJECT64
+        if self.project64_enabled.get():
+            success, msg = backup_project64(self.project64_var.get(), backup_root, progress_callback=self.progress_callback)
+            messages.append(msg)
+            
+        # DOLPHIN
+        if self.dolphin_enabled.get():
+            success, msg = backup_dolphin(self.dolphin_var.get(), backup_root, progress_callback=self.progress_callback)
+            messages.append(msg)
+
+        # CEMU
+        if self.cemu_enabled.get():
+            success, msg = backup_cemu(self.cemu_var.get(), backup_root, progress_callback=self.progress_callback)
+            messages.append(msg)
+
+        # EDEN
+        if self.eden_enabled.get():
+            success, msg = backup_eden(self.eden_var.get(), backup_root, progress_callback=self.progress_callback)
             messages.append(msg)
 
         # ================== BACKUPS EXTRAS ==================
@@ -602,17 +933,47 @@ class MultiSavedataBackupApp:
             )
             messages.append(msg)
 
-        self.progress_var.set(100)
-        self.progress_label.configure(text="100%")
-        self.show_backup_messages(t("backup_finished"), messages)
+        self.root.after(0, self._finish_backup_ui, messages)
 
     def run_restore(self):
         backup_root = self.backup_var.get()
         messages = []
 
+        if backup_root:
+            sync_ready, sync_error = ensure_sync_client_running(
+                backup_root,
+                progress_callback=self.progress_callback
+            )
+
+            if not sync_ready:
+                error_msg = sync_error
+                self.root.after(
+                    0,
+                    lambda: messagebox.showerror(
+                        t("error"),
+                        error_msg
+                    )
+                )
+                return
+
+        # STEAM
+        if self.steam_enabled.get():
+            success, msg = restore_steam(self.steam_var.get(), backup_root, progress_callback=self.progress_callback)
+            messages.append(msg)
+
         # PPSSPP
         if self.ppsspp_enabled.get():
             success, msg = restore_ppsspp(self.ppsspp_var.get(), backup_root, progress_callback=self.progress_callback)
+            messages.append(msg)
+
+        # VITA3K
+        if self.vita3k_enabled.get():
+            success, msg = restore_vita3k(self.vita3k_var.get(), backup_root, progress_callback=self.progress_callback)
+            messages.append(msg)
+
+        # DUCKSTATION
+        if self.duckstation_enabled.get():
+            success, msg = restore_duckstation(self.duckstation_var.get(), backup_root, progress_callback=self.progress_callback)
             messages.append(msg)
             
         # PCSX2
@@ -620,9 +981,39 @@ class MultiSavedataBackupApp:
             success, msg = restore_pcsx2(self.pcsx2_var.get(), backup_root, progress_callback=self.progress_callback)
             messages.append(msg)
             
+        # RPCS3
+        if self.rpcs3_enabled.get():
+            success, msg = restore_rpcs3(self.rpcs3_var.get(), backup_root, progress_callback=self.progress_callback)
+            messages.append(msg)
+            
+        # MELONDS
+        if self.melonds_enabled.get():
+            success, msg = restore_melonds(self.melonds_var.get(), backup_root, progress_callback=self.progress_callback)
+            messages.append(msg)
+            
         # CITRA
         if self.citra_enabled.get():
             success, msg = restore_citra(self.citra_var.get(), backup_root, progress_callback=self.progress_callback)
+            messages.append(msg)
+            
+        # PROJECT64
+        if self.project64_enabled.get():
+            success, msg = restore_project64(self.project64_var.get(), backup_root, progress_callback=self.progress_callback)
+            messages.append(msg)
+            
+        # DOLPHIN
+        if self.dolphin_enabled.get():
+            success, msg = restore_dolphin(self.dolphin_var.get(), backup_root, progress_callback=self.progress_callback)
+            messages.append(msg)
+
+        # CEMU
+        if self.cemu_enabled.get():
+            success, msg = restore_cemu(self.cemu_var.get(), backup_root, progress_callback=self.progress_callback)
+            messages.append(msg)
+
+        # EDEN
+        if self.eden_enabled.get():
+            success, msg = restore_eden(self.eden_var.get(), backup_root, progress_callback=self.progress_callback)
             messages.append(msg)
 
         # ================== RESTORES EXTRAS ==================
@@ -639,15 +1030,11 @@ class MultiSavedataBackupApp:
             )
             messages.append(msg)
 
-        self.progress_var.set(100)
-        self.progress_label.configure(text="100%")
-        messagebox.showinfo(t("restore_finished"), "\n\n".join(messages))
+        self.root.after(0, self._finish_restore_ui, messages)
 
     # ================== BACKUP MESSAGES ==================        
     def show_backup_messages(self, title, messages):
-        """
-        Cria uma janela moderna CTk para exibir mensagens de backup/restore.
-        """
+        # Cria uma janela moderna CTk para exibir mensagens de backup/restore.
         dialog = ctk.CTkToplevel(self.root)
         dialog.title(title)
         dialog.geometry("480x320")
@@ -734,7 +1121,6 @@ class MultiSavedataBackupApp:
         self.update_extra_layout()
 
         return container  # importante retornar para usar na criação e layout
-
 
     def update_extra_layout(self):
         for index, (container, _, _) in enumerate(self.extra_units):
@@ -898,17 +1284,24 @@ class MultiSavedataBackupApp:
 
     # ====================== SALVAR E FECHAR ======================
     def on_close(self):
-        # Salva tamanho e posição da janela
-        self.config["window_width"] = self.root.winfo_width()
-        self.config["window_height"] = self.root.winfo_height()
-        self.config["window_x"] = self.root.winfo_x()
-        self.config["window_y"] = self.root.winfo_y()
-        save_config(self.config)
-        # Fecha a janela
-        self.root.destroy()
+        self.config["window_state"] = self.root.state()
 
+        if self.root.state() != "zoomed":
+            self.config["window_width"] = self.root.winfo_width()
+            self.config["window_height"] = self.root.winfo_height()
+            self.config["window_x"] = self.root.winfo_x()
+            self.config["window_y"] = self.root.winfo_y()
+
+        save_config(self.config)
+        self.root.destroy()
 
 if __name__ == "__main__":
     root = ctk.CTk()
+
+    try:
+        root.iconbitmap(resource_path("icon.ico"))
+    except Exception as e:
+        print(e)
+
     app = MultiSavedataBackupApp(root)
     root.mainloop()

@@ -3,12 +3,10 @@ import os
 
 EXTRA_BACKUP_FILE = "extra_backups.json"
 
-
 def _default_data():
     return {
         "extras": []
     }
-
 
 def load_extra_backups():
     if not os.path.exists(EXTRA_BACKUP_FILE):
@@ -37,7 +35,6 @@ def load_extra_backups():
         validated.append(extra)
 
     return {"extras": validated}
-
 
 def save_extra_backups(data: dict):
     with open(EXTRA_BACKUP_FILE, "w", encoding="utf-8") as f:

@@ -3,8 +3,6 @@
 The tool is intended to make and restore backup easily and automatically within a few clicks, totally friendly user and with few restrictions for lesser chances of the user doing something wrong.
 It might not be perfect and it is not that fancy, but it will work as I planned it to. Give it a try, reach me out for feedback if you want, just use it wiselly and respectifully.
 
-<img width="899" height="731" alt="imagem_2026-01-03_234904888" src="https://github.com/user-attachments/assets/a95d069b-470a-4b60-946d-0ed6efeb4596" />
-
 ## ================= FOR USERS =================
 Requirements:
 
@@ -30,12 +28,15 @@ Requirements:
 ``python app.py``
 
 3- For compiling
-``pyinstaller --onefile --noconsole app.py``
+``pyinstaller --onefile --noconsole --icon=icon.ico --add-data "icon.ico;." --name="Multi Savedata Backup" app.py``
 
-4- Run
+4- Copy the "locales" folder into the "dist" folder.
+
+5- Run
 dist/app.exe
 
-5- Leave my signature alone? Please?
+6- Leave my signature alone? Please?
 
 ## Special thanks to:
 * My friend Luck for giving me the idea.
+* Rendricks for generating the Icon.
